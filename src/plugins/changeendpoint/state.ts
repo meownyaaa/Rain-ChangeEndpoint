@@ -8,10 +8,12 @@ interface Config {
     instance: string | null;
     accounts: Record<string, string>;
     customs: Server[];
+    disrespectPermissions: boolean;
+    boostCount: number;
 }
 
 export const state: { config: Config; endpoints: Endpoints | null } = {
-    config: { instance: null, accounts: {}, customs: [] },
+    config: { instance: null, accounts: {}, customs: [], disrespectPermissions: true, boostCount: 67 },
     endpoints: null,
 };
 
@@ -35,7 +37,13 @@ export async function loadConfig() {
     try {
         if (await fileExists(CONFIG_PATH)) {
             const saved = JSON.parse(await readFile(CONFIG_PATH));
-            state.config = { instance: saved.instance ?? null, accounts: { ...saved.accounts }, customs: Array.isArray(saved.customs) ? saved.customs : [] };
+            state.config = {
+                instance: saved.instance ?? null,
+                accounts: { ...saved.accounts },
+                customs: Array.isArray(saved.customs) ? saved.customs : [],
+                disrespectPermissions: saved.disrespectPermissions ?? true,
+                boostCount: typeof saved.boostCount === "number" ? saved.boostCount : 67,
+            };
         }
     } catch (e) {
         console.warn("[ChangeEndpoint] couldn't read config", e);
@@ -65,6 +73,16 @@ export function linkAccount(userId: string, instance = currentInstance()) {
     if (state.config.accounts[userId] === instance) return;
     state.config = { ...state.config, accounts: { ...state.config.accounts, [userId]: instance } };
     save();
+}
+
+export function setDisrespectPermissions(value: boolean) {
+    state.config = { ...state.config, disrespectPermissions: value };
+    return save();
+}
+
+export function setBoostCount(value: number) {
+    state.config = { ...state.config, boostCount: value };
+    return save();
 }
 
 export function saveCustom(server: Server) {

@@ -50,6 +50,12 @@ export function installGlobalEnv() {
 
 const DISCORD_GATEWAY = /^wss?:\/\/gateway[\w.-]*\.discord\.gg(?=[/?]|$)/;
 
+const gatewayWatchers = new Set<(ws: WebSocket) => void>();
+export const onGatewaySocket = (fn: (ws: WebSocket) => void) => {
+    gatewayWatchers.add(fn);
+    return () => void gatewayWatchers.delete(fn);
+};
+
 // safety net until the gateway patches are in: never let a custom server's token reach Discord's gateway
 export function guardWebSocket() {
     const Original = globalThis.WebSocket;
@@ -57,7 +63,10 @@ export function guardWebSocket() {
         construct(target, args, newTarget) {
             if (state.endpoints && typeof args[0] === "string" && DISCORD_GATEWAY.test(args[0]))
                 args[0] = args[0].replace(DISCORD_GATEWAY, state.endpoints.gateway.replace(/\/+$/, ""));
-            return Reflect.construct(target, args, newTarget);
+            const ws = Reflect.construct(target, args, newTarget) as WebSocket;
+            const gateway = state.endpoints?.gateway.replace(/\/+$/, "");
+            if (gateway && typeof args[0] === "string" && args[0].startsWith(gateway)) gatewayWatchers.forEach(fn => fn(ws));
+            return ws;
         },
     });
     return () => {

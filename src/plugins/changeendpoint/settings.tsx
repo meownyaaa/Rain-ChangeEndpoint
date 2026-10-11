@@ -1,12 +1,12 @@
 import { BundleUpdaterManager } from "@api/native/modules";
 import { NavigationNative } from "@metro/common";
-import { Stack, TableRadioGroup, TableRadioRow, TableRow, TableRowGroup } from "@metro/common/components";
+import { Stack, TableRadioGroup, TableRadioRow, TableRow, TableRowGroup, TableSwitchRow, TextInput } from "@metro/common/components";
 import React, { useEffect, useReducer } from "react";
 import { Alert, ScrollView } from "react-native";
 
 import { DISCORD, endpointsOf, type Server } from "./config";
 import ServerEditor from "./editor";
-import { currentInstance, save, serverName, servers, setInstance, state } from "./state";
+import { currentInstance, save, serverName, servers, setBoostCount, setDisrespectPermissions, setInstance, state } from "./state";
 
 const apiLabel = (server: Server) => endpointsOf(server)?.api.replace(/^\/\//, "");
 
@@ -46,6 +46,30 @@ export default function ChangeEndpointSettings() {
                         <TableRow key={s.id} label={s.name} subLabel={s.host} arrow onPress={() => edit(s)} />
                     ))}
                     <TableRow label="Add server" arrow onPress={() => edit()} />
+                </TableRowGroup>
+                <TableRowGroup title="Behaviour">
+                    <TableSwitchRow
+                        label="Disrespect permissions"
+                        subLabel="Ignore permissions that Spacebar servers don't enforce. For now this lets you send and forward stickers from other guilds without the Use External Stickers permission."
+                        value={state.config.disrespectPermissions}
+                        onValueChange={(value: boolean) => {
+                            setDisrespectPermissions(value);
+                            rerender();
+                        }}
+                    />
+                </TableRowGroup>
+                <TableRowGroup title="Boosts">
+                    <Stack style={{ padding: 12 }} spacing={8}>
+                        <TextInput
+                            label="Boost count"
+                            description="How many boosts every guild shows. The boost level follows from it like on Discord (2, 7 and 14 boosts), and 14 or more unlocks all boost perks. Restart to apply."
+                            defaultValue={String(state.config.boostCount)}
+                            keyboardType="number-pad"
+                            onChange={(text: string) => {
+                                if (/^\d+$/.test(text)) setBoostCount(Number(text));
+                            }}
+                        />
+                    </Stack>
                 </TableRowGroup>
                 {endpoints && (
                     <TableRowGroup title="Endpoints">

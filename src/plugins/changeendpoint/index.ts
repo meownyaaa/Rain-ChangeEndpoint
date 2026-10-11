@@ -2,11 +2,16 @@ import { logger } from "@lib/utils/logger";
 import { definePlugin } from "@plugins";
 
 import { patchAccounts } from "./accounts";
+import { interceptBoosts, patchBoostsAndLimits } from "./boosts";
+import { patchChannelIconEditor } from "./channelIconEditor";
+import { collectChannelIcons, loadChannelIcons, patchChannelIcons } from "./channelIcons";
 import { guardWebSocket, installGlobalEnv } from "./env";
 import { patchGateway, patchGatewayEarly } from "./gateway";
 import { patchLabels } from "./labels";
 import { patchLogin } from "./login";
+import { patchMessageMembers } from "./members";
 import { patchNetwork } from "./network";
+import { patchPermissions } from "./permissions";
 import { patchReactions } from "./reactions";
 import { patchRoles } from "./roles";
 import ChangeEndpointSettings from "./settings";
@@ -20,16 +25,17 @@ export default definePlugin({
     description: "Connect to Spacebar and other Discord-compatible servers",
     author: [{ name: "hazel", id: 0n }],
     id: "changeendpoint",
-    version: "0.5.5",
+    version: "0.9.3",
     requiresRestart: true,
     async eagerStart() {
         // rain holds back Discord's startup until eager plugins finish, so the server is known before any request
         await loadConfig();
+        await loadChannelIcons();
         installGlobalEnv();
-        unpatches.push(guardWebSocket(), ...patchNetwork(), ...patchReactions(), ...patchGatewayEarly());
+        unpatches.push(guardWebSocket(), ...patchNetwork(), ...patchReactions(), ...patchGatewayEarly(), ...collectChannelIcons(), ...patchMessageMembers(), ...interceptBoosts());
     },
     start() {
-        for (const patch of [patchGateway, patchRoles, patchAccounts, patchLogin, patchLabels, patchVoice]) {
+        for (const patch of [patchGateway, patchRoles, patchAccounts, patchLogin, patchLabels, patchVoice, patchChannelIcons, patchPermissions, patchBoostsAndLimits, patchChannelIconEditor]) {
             try {
                 unpatches.push(...patch());
             } catch (e) {

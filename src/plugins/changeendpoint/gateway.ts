@@ -1,4 +1,4 @@
-import { instead } from "@api/patcher";
+import { before, instead } from "@api/patcher";
 import { findByStoreName } from "@metro";
 import { waitFor } from "@metro/internals/modules";
 
@@ -33,6 +33,11 @@ function install(socket: GatewaySocket | undefined) {
         // zstd-stream breaks on spacebar
         instead("getAlgorithm", Object.getPrototypeOf(socket.compressionHandler), function (this: unknown, args: unknown[], getAlgorithm: Function) {
             return state.endpoints ? "" : getAlgorithm.apply(this, args);
+        }),
+        // spacebar's stream delete sends a voice state whose member has no user, Discord throws on it and resets the gateway
+        before("_handleDispatch", Object.getPrototypeOf(socket), (args: any[]) => {
+            const [data, type] = args;
+            if (state.endpoints && type === "VOICE_STATE_UPDATE" && data?.member && !data.member.user) delete data.member;
         }),
         onInstanceChange(() => {
             socket.resumeUrl = null;

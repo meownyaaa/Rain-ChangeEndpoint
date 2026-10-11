@@ -2,6 +2,7 @@ import { instead } from "@api/patcher";
 import { showToast } from "@api/ui/toasts";
 import { findByProps } from "@metro";
 
+import { withoutSpoofedFeatures } from "./boosts";
 import { currentInstance, instanceOfUrl, isCurrentInstanceUrl, serverName, state } from "./state";
 import { isAccountSwitcherOpen, openAccountSwitcher } from "./switcher";
 
@@ -39,6 +40,8 @@ function cleanGatewayPayload(payload: Payload) {
         delete d.client_state;
         if (d.properties) for (const key of MOBILE_ONLY_PROPERTIES) delete d.properties[key];
         if (d.presence) d.presence = trimPresence(d.presence, false);
+        // spacebar only broadcasts coming online when the identify says offline
+        if (state.endpoints && d.presence && d.presence.status !== "invisible") d.presence.status = "offline";
     } else if (payload.op === 3) payload.d = trimPresence(d, true);
     else if (payload.op === 4) delete d.preferred_regions;
 
@@ -63,6 +66,19 @@ export function isTokenAllowed(token: string | null | undefined, url: string) {
 }
 
 const MESSAGE_SEND = /^(POST|PATCH) .*\/channels\/\d+\/messages(\/\d+)?$/;
+const GUILD_EDIT = /^PATCH .*\/guilds\/(\d+)$/;
+
+function cleanGuildEdit(guildId: string, body: string) {
+    const json = JSON.parse(body);
+    if (Array.isArray(json.features)) {
+        const features = withoutSpoofedFeatures(guildId, json.features);
+        if (features) json.features = features;
+        else delete json.features;
+    }
+    // mobile sends "" for no channel and spacebar fails on both "" and null, so unset channels are left out
+    for (const key of Object.keys(json)) if (key.endsWith("_channel_id") && (json[key] === "" || json[key] === null)) delete json[key];
+    return JSON.stringify(json);
+}
 const requests = new WeakMap<XMLHttpRequest, { tag: string; url: string }>();
 
 const blocked = (where: string) => console.warn(`[ChangeEndpoint] Blocked a request carrying another server's token: ${where}`);
@@ -112,6 +128,8 @@ export function patchNetwork() {
         instead("send", XMLHttpRequest.prototype, function (this: XMLHttpRequest, args: any[], send: Function) {
             const req = requests.get(this);
             const [body] = args;
+            const guildId = req && typeof body === "string" && isCurrentInstanceUrl(req.url) ? req.tag.match(GUILD_EDIT)?.[1] : undefined;
+            if (guildId) return send.call(this, cleanGuildEdit(guildId, body));
             if (req && typeof body === "string" && MESSAGE_SEND.test(req.tag) && isCurrentInstanceUrl(req.url) && /signal_strength|mobile_network_type/.test(body)) {
                 const json = JSON.parse(body);
                 delete json.signal_strength;

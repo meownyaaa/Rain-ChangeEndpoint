@@ -39,6 +39,10 @@ export function patchRoles() {
             if (Array.isArray(list)) for (const m of list) withEveryoneColor(m, args[0]);
             return list;
         }),
+        // Discord hides activities it can't verify, which is every activity on a custom server
+        instead("getActivities", Object.getPrototypeOf(findByStoreName("PresenceStore")), function (this: { getUnfilteredActivities: Function }, args: unknown[], original: Function) {
+            return state.endpoints ? this.getUnfilteredActivities(...args) : original.apply(this, args);
+        }),
         // spacebar sends icon "" on emoji roles, Discord then builds a broken image url and skips the emoji
         after("getRoleIconData", findByProps("getRoleIconData", "canGuildUseRoleIcons"), (args: any[], data: { customIconSrc?: string } | null) => {
             const role = args[0] as Role | undefined;
