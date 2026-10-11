@@ -7,6 +7,7 @@ import { patchChannelIconEditor } from "./channelIconEditor";
 import { collectChannelIcons, loadChannelIcons, patchChannelIcons } from "./channelIcons";
 import { guardWebSocket, installGlobalEnv } from "./env";
 import { patchGateway, patchGatewayEarly } from "./gateway";
+import { patchGifs } from "./gifs";
 import { patchLabels } from "./labels";
 import { patchLogin } from "./login";
 import { patchMessageMembers } from "./members";
@@ -27,7 +28,7 @@ export default definePlugin({
     description: "Connect to Spacebar and other Discord-compatible servers",
     author: [{ name: "hazel", id: 0n }],
     id: "changeendpoint",
-    version: "0.10.10",
+    version: "0.10.12",
     requiresRestart: true,
     async eagerStart() {
         // rain holds back Discord's startup until eager plugins finish, so the server is known before any request
@@ -35,7 +36,7 @@ export default definePlugin({
         await loadChannelIcons();
         await loadMediaSizes();
         installGlobalEnv();
-        unpatches.push(guardWebSocket(), ...patchNetwork(), ...patchReactions(), ...patchGatewayEarly(), ...collectChannelIcons(), ...patchMessageMembers(), ...interceptBoosts(), ...patchInvitesEarly());
+        unpatches.push(guardWebSocket(), ...patchNetwork(), ...patchReactions(), ...patchGatewayEarly(), ...collectChannelIcons(), ...patchMessageMembers(), ...patchGifs(), ...interceptBoosts(), ...patchInvitesEarly());
     },
     start() {
         for (const patch of [patchGateway, patchRoles, patchAccounts, patchLogin, patchLabels, patchVoice, patchChannelIcons, patchPermissions, patchBoostsAndLimits, patchChannelIconEditor, patchInvites, pollMediaSizes]) {
