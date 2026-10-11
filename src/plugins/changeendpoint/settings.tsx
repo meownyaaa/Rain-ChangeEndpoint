@@ -7,6 +7,7 @@ import { Alert, ScrollView } from "react-native";
 import { DISCORD, endpointsOf, type Server } from "./config";
 import ServerEditor from "./editor";
 import { currentInstance, save, serverName, servers, setBoostCount, setDisrespectPermissions, setInstance, state } from "./state";
+import { openAccountSwitcher } from "./switcher";
 
 const apiLabel = (server: Server) => endpointsOf(server)?.api.replace(/^\/\//, "");
 
@@ -41,6 +42,9 @@ export default function ChangeEndpointSettings() {
                         <TableRadioRow key={s.id} label={s.name} subLabel={apiLabel(s)} value={s.id} />
                     ))}
                 </TableRadioGroup>
+                <TableRowGroup title="Accounts">
+                    <TableRow label="Switch account" subLabel="Opens Discord's account switcher, for when a server can't be reached and the app is stuck" arrow onPress={openAccountSwitcher} />
+                </TableRowGroup>
                 <TableRowGroup title="Custom servers">
                     {state.config.customs.map(s => (
                         <TableRow key={s.id} label={s.name} subLabel={s.host} arrow onPress={() => edit(s)} />

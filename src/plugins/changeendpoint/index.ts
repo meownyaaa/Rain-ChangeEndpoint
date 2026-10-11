@@ -12,6 +12,7 @@ import { patchLogin } from "./login";
 import { patchMessageMembers } from "./members";
 import { patchNetwork } from "./network";
 import { patchInvites, patchInvitesEarly } from "./invites";
+import { loadMediaSizes, pollMediaSizes } from "./mediaSizes";
 import { patchPermissions } from "./permissions";
 import { patchReactions } from "./reactions";
 import { patchRoles } from "./roles";
@@ -26,17 +27,18 @@ export default definePlugin({
     description: "Connect to Spacebar and other Discord-compatible servers",
     author: [{ name: "hazel", id: 0n }],
     id: "changeendpoint",
-    version: "0.10.5",
+    version: "0.10.10",
     requiresRestart: true,
     async eagerStart() {
         // rain holds back Discord's startup until eager plugins finish, so the server is known before any request
         await loadConfig();
         await loadChannelIcons();
+        await loadMediaSizes();
         installGlobalEnv();
         unpatches.push(guardWebSocket(), ...patchNetwork(), ...patchReactions(), ...patchGatewayEarly(), ...collectChannelIcons(), ...patchMessageMembers(), ...interceptBoosts(), ...patchInvitesEarly());
     },
     start() {
-        for (const patch of [patchGateway, patchRoles, patchAccounts, patchLogin, patchLabels, patchVoice, patchChannelIcons, patchPermissions, patchBoostsAndLimits, patchChannelIconEditor, patchInvites]) {
+        for (const patch of [patchGateway, patchRoles, patchAccounts, patchLogin, patchLabels, patchVoice, patchChannelIcons, patchPermissions, patchBoostsAndLimits, patchChannelIconEditor, patchInvites, pollMediaSizes]) {
             try {
                 unpatches.push(...patch());
             } catch (e) {

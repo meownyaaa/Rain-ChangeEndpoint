@@ -29,7 +29,7 @@ const trimPresence = (p: Record<string, any>, keepActivities: boolean) => ({
 });
 
 // harmony rejects these with 4000
-const MOBILE_ONLY_PROPERTIES = ["device_vendor_id", "design_id", "client_version", "client_app_state", "is_fast_connect", "gateway_connect_reasons"];
+const MOBILE_ONLY_PROPERTIES = ["device_vendor_id", "design_id", "client_version", "client_app_state", "is_fast_connect", "gateway_connect_reasons", "installation_id"];
 
 function cleanGatewayPayload(payload: Payload) {
     const d = payload.d;

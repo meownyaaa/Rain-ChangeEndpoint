@@ -6,7 +6,7 @@ import { ReactNative } from "@metro/common";
 import { state } from "./state";
 
 // the ChangeEndpointVoice tweak answers FileReaderModule.readAsDataURL calls tagged changeEndpoint
-async function native<T = unknown>(method: string, args: unknown[] = []): Promise<T> {
+export async function native<T = unknown>(method: string, args: unknown[] = []): Promise<T> {
     const reader = ReactNative.NativeModules.FileReaderModule;
     const res = await reader.readAsDataURL({ changeEndpoint: { method, args } });
     if (res && typeof res === "object" && "error" in res) throw new Error(String(res.error));

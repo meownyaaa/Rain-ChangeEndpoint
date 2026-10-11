@@ -57,11 +57,24 @@ export const onInstanceChange = (fn: () => void) => {
     return () => void listeners.delete(fn);
 };
 
+// login and account bookkeeping, kept in memory and on the console so a debugger can read it after a hang
+const accountLogLines: string[] = ((globalThis as { __ceAccountLog?: string[] }).__ceAccountLog = []);
+export function accountLog(line: string) {
+    if (accountLogLines.length > 300) accountLogLines.shift();
+    const entry = `${new Date().toISOString().slice(11, 23)} ${line}`;
+    accountLogLines.push(entry);
+    console.log(`[ChangeEndpoint] account ${entry}`);
+}
+
 export function setInstance(instance: string) {
     const id = instance === DISCORD ? null : instance;
     const endpoints = id ? resolveEndpoints(id) : null;
-    if (id && !endpoints) return false;
+    if (id && !endpoints) {
+        accountLog(`server ${instance} has no endpoints, not switching`);
+        return false;
+    }
 
+    accountLog(`server ${currentInstance()} -> ${instance}`);
     state.config = { ...state.config, instance: id };
     state.endpoints = endpoints;
     save();
@@ -71,6 +84,7 @@ export function setInstance(instance: string) {
 
 export function linkAccount(userId: string, instance = currentInstance()) {
     if (state.config.accounts[userId] === instance) return;
+    accountLog(`link ${userId} to ${instance} (was ${state.config.accounts[userId] ?? "unlinked"})`);
     state.config = { ...state.config, accounts: { ...state.config.accounts, [userId]: instance } };
     save();
 }
