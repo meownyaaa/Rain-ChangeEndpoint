@@ -48,6 +48,8 @@ interface Session {
     codecs: Record<string, unknown>[];
     queue: Promise<unknown>;
     muted: boolean;
+    // our own go live, video comes from the broadcast extension
+    screen: boolean;
     // the local offer the last answer was applied to, a new answer needs a new offer
     answeredSdp?: string;
     onEngineState(value: string): void;
@@ -60,6 +62,24 @@ const sockets = new WeakSet<WebSocket>();
 let nextSessionId = 1;
 
 const sends = (s: Session) => s.context === "default";
+
+const STREAM_BITRATE = 2500000;
+
+// the send-only video section carries our screen, its ssrc and rtx ssrc are in the FID group
+function screenOp12(s: Session) {
+    const section = sections(s.localSdp).find(m => isVideo(m) && /\r?\na=sendonly/.test(m)) ?? "";
+    const video = Number(sdpAttrs(section, "ssrc")[0]?.split(" ")[0] ?? 0);
+    // the answer leaves rtx out for our screen, desktop go lives also announce their audio
+    return {
+        audio_ssrc: s.ssrc,
+        video_ssrc: video || 0,
+        rtx_ssrc: 0,
+        streams: [{
+            type: "video", rid: "100", ssrc: video || 0, rtx_ssrc: 0, active: !!video, quality: 100,
+            max_bitrate: STREAM_BITRATE, max_framerate: 30, max_resolution: { type: "fixed", width: 1280, height: 720 },
+        }],
+    };
+}
 
 // mobile never sends op 12/op 5 for our transport, so the server wouldn't forward our audio
 const sendVoice = (s: Session, op: number, d: Record<string, unknown>) => {
@@ -107,8 +127,9 @@ function videoCodecs(sdp: string) {
     const rtxOf = (pt: string) => fmtps.find(f => f.endsWith(` apt=${pt}`))?.split(" ")[0];
     return Object.keys(VIDEO_PRIORITY).flatMap(name => {
         const pts = rtpmaps.filter(([, codec]) => codec === `${name}/90000`).map(([pt]) => pt);
-        // desktop senders use constrained baseline
-        const pt = name === "H264" ? (pts.find(p => /profile-level-id=42e01f/.test(fmtp(p)) && /packetization-mode=1/.test(fmtp(p))) ?? pts[0]) : pts[0];
+        // pion only takes constrained baseline (42e0, any level), iOS lists high profile first
+        const baseline = (p: string) => /profile-level-id=42e0/i.test(fmtp(p)) && /packetization-mode=1/.test(fmtp(p));
+        const pt = name === "H264" ? (pts.find(baseline) ?? pts[0]) : pts[0];
         if (!pt) return [];
         const rtx = rtxOf(pt);
         return [{ name, type: "video", priority: VIDEO_PRIORITY[name], payload_type: Number(pt), rtx_payload_type: rtx ? Number(rtx) : null }];
@@ -157,21 +178,23 @@ function buildAnswer(s: Session) {
         if (isVideo(section)) {
             const bound = s.video.get(mids[i]);
             const vpt = h264?.payload_type ?? 0;
-            const rtx = h264?.rtx_payload_type;
+            const sending = /\r?\na=sendonly/.test(section);
+            const rtx = sending ? undefined : h264?.rtx_payload_type;
             const label = bound && `${bound.userId}-${bound.ssrc}`;
             return [
                 `m=video ${port} UDP/TLS/RTP/SAVPF ${vpt}${rtx ? ` ${rtx}` : ""}`,
                 cline,
                 `a=rtpmap:${vpt} H264/90000`,
                 ...(rtx ? [`a=rtpmap:${rtx} rtx/90000`] : []),
-                `a=fmtp:${vpt} level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f`,
+                // the engine only keeps codecs whose parameters match its own offer
+                `a=fmtp:${sdpAttrs(section, "fmtp").find(f => f.startsWith(`${vpt} `)) ?? `${vpt} level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f`}`,
                 ...(rtx ? [`a=fmtp:${rtx} apt=${vpt}`] : []),
                 `a=rtcp:${rtcp}`,
                 ...["ccm fir", "nack", "nack pli", "goog-remb", "transport-cc"].map(fb => `a=rtcp-fb:${vpt} ${fb}`),
                 "a=setup:passive",
                 `a=mid:${mids[i]}`,
                 ...(label ? [`a=msid:${label} v${label}`] : []),
-                bound ? "a=sendonly" : "a=inactive",
+                bound ? "a=sendonly" : sending ? "a=recvonly" : "a=inactive",
                 `a=ice-ufrag:${ufrag}`,
                 `a=ice-pwd:${pwd}`,
                 `a=fingerprint:${fingerprint}`,
@@ -290,6 +313,7 @@ function pollEvents() {
             if (!s || type !== "connection") continue;
             s.onEngineState(value);
             if (value === "CONNECTED" && sends(s)) republish(s);
+            if (value === "CONNECTED" && s.screen) publishScreen(s);
         }
     }, 300);
 }
@@ -318,13 +342,14 @@ function takeOver(conn: Connection, context: string, serverSsrc: number) {
         codecs: [],
         queue: Promise.resolve(),
         muted: false,
+        screen: context === "stream" && String((conn as { streamUserId?: unknown }).streamUserId ?? "") === String(findByStoreName("UserStore").getCurrentUser()?.id),
         onEngineState(value) {
             if (value === "CONNECTED") asOurs(() => setConnectionState.call(conn, "CONNECTED"));
             else if (value === "FAILED" || value === "CLOSED") asOurs(() => setConnectionState.call(conn, "DISCONNECTED"));
         },
     };
     sessions.set(s.id, s);
-    debug(`${s.id} ${context} connect, server ssrc ${serverSsrc}`);
+    debug(`${s.id} ${context} connect, server ssrc ${serverSsrc}${s.screen ? ", our screen" : ""}`);
 
     conn.setConnectionState = function (value) {
         if (ours) setConnectionState.call(this, value);
@@ -360,7 +385,7 @@ function takeOver(conn: Connection, context: string, serverSsrc: number) {
     pollEvents();
 
     // every session offers a receive-only video section, it's where op 1 gets the real video payload types
-    native<string>("voice.offer", [s.id, sends(s), true]).then(
+    native<string>("voice.offer", [s.id, sends(s), !s.screen, s.screen]).then(
         sdp => {
             s.ssrc = Number(sdp.match(/a=ssrc:(\d+)/)?.[1] ?? 0);
             s.localSdp = sdp;
@@ -377,6 +402,15 @@ function takeOver(conn: Connection, context: string, serverSsrc: number) {
             debug(`${s.id} offer failed ${String(e?.message ?? e).slice(0, 300)}`);
             console.warn("[ChangeEndpoint] voice offer failed:", e);
         },
+    );
+}
+
+// Discord's own op 12 for a go live describes its native engine, ours replaces it once connected
+function publishScreen(s: Session) {
+    [500, 2500].forEach(delay =>
+        setTimeout(() => {
+            if (sessions.has(s.id)) sendVoice(s, 12, screenOp12(s));
+        }, delay),
     );
 }
 
@@ -418,7 +452,7 @@ function onVoiceMessage(ws: WebSocket, data: unknown) {
         const videoSsrc = Number(payload.d.video_ssrc || stream?.ssrc || 0);
         const hasVideo = (ssrc: number) => [...s.video.values()].some(v => v.ssrc === ssrc);
         const newAudio = !!audio_ssrc && !s.users.has(audio_ssrc);
-        const newVideo = !!videoSsrc && !hasVideo(videoSsrc);
+        const newVideo = !s.screen && !!videoSsrc && !hasVideo(videoSsrc);
         const videoGone = !videoSsrc && [...s.video.values()].some(v => v.userId === user_id);
         if (videoGone) stopVideo(s, user_id);
         if (!newAudio && !newVideo) {
@@ -445,6 +479,8 @@ function rewriteOutgoing(ws: WebSocket, data: string) {
     if (payload.op === 1) {
         if (payload.d.protocol !== "webrtc") return data;
         payload.d.codecs = s.codecs;
+    } else if (payload.op === 12 && s.screen) {
+        payload.d = screenOp12(s);
     } else if (payload.op === 12) {
         const audio = sends(s) && payload.d.audio_ssrc ? s.ssrc : 0;
         payload.d = { ...payload.d, audio_ssrc: audio, video_ssrc: 0, rtx_ssrc: 0, streams: [] };
