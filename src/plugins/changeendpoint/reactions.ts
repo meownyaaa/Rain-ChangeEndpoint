@@ -22,10 +22,18 @@ function fixReaction(reaction: any) {
     reaction.burst_colors ??= [];
 }
 
+// spacebar doesn't measure videos, Discord shows media without a size as a plain file
+function fixAttachment(attachment: any) {
+    if (!attachment || !/^(video|image)\//.test(attachment.content_type ?? "") || (attachment.width && attachment.height)) return;
+    attachment.width = 640;
+    attachment.height = 360;
+}
+
 // replies and forwards carry their own copy of the original message
 function fixMessage(message: any, depth = 0) {
     if (!message || depth > 2) return;
     for (const reaction of message.reactions ?? []) fixReaction(reaction);
+    for (const attachment of message.attachments ?? []) fixAttachment(attachment);
     fixMessage(message.referenced_message, depth + 1);
     for (const snapshot of message.message_snapshots ?? []) fixMessage(snapshot?.message, depth + 1);
 }
