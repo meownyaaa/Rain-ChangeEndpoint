@@ -10,17 +10,35 @@ const BOOST_FEATURES = [
     "MORE_EMOJI", "MORE_STICKERS", "MORE_SOUNDBOARD", "ROLE_ICONS", "ROLE_SUBSCRIPTIONS_ENABLED",
 ];
 
-const limits = { maxEmojis: 2000, maxStickers: 500 };
+const limits = { maxEmojis: 2000, maxStickers: 500, maxBio: 190, maxPronouns: 40 };
+const LENGTH_CONSTANTS = ["BIO_MAX_LENGTH", "BIO_MAX_LENGTH_INCREASED", "PRONOUNS_MAX_LENGTH"] as const;
+let discordLengths: Record<(typeof LENGTH_CONSTANTS)[number], number> | undefined;
+
+function applyLengthLimits() {
+    const constants = findByProps("PRONOUNS_MAX_LENGTH", "BIO_MAX_LENGTH");
+    if (!constants) return;
+    discordLengths ??= { BIO_MAX_LENGTH: constants.BIO_MAX_LENGTH, BIO_MAX_LENGTH_INCREASED: constants.BIO_MAX_LENGTH_INCREASED, PRONOUNS_MAX_LENGTH: constants.PRONOUNS_MAX_LENGTH };
+    for (const key of LENGTH_CONSTANTS)
+        constants[key] = !state.endpoints ? discordLengths[key] : key === "PRONOUNS_MAX_LENGTH" ? limits.maxPronouns : limits.maxBio;
+}
+
+function restoreLengthLimits() {
+    const constants = findByProps("PRONOUNS_MAX_LENGTH", "BIO_MAX_LENGTH");
+    if (constants && discordLengths) Object.assign(constants, discordLengths);
+}
 
 async function loadLimits() {
-    if (!state.endpoints) return;
+    if (!state.endpoints) return applyLengthLimits();
     try {
         const { body } = await findByProps("get", "post", "put", "patch", "del", "V8APIError").get({ url: "/policies/instance/limits" });
         limits.maxEmojis = body?.guild?.maxEmojis ?? limits.maxEmojis;
         limits.maxStickers = body?.guild?.maxStickers ?? limits.maxStickers;
+        limits.maxBio = body?.user?.maxBio ?? limits.maxBio;
+        limits.maxPronouns = body?.user?.maxPronouns ?? limits.maxPronouns;
     } catch (e) {
         console.warn("[ChangeEndpoint] couldn't load instance limits, using Spacebar's defaults", e);
     }
+    applyLengthLimits();
 }
 
 function boostPerks() {
@@ -87,7 +105,11 @@ export function patchBoostsAndLimits() {
 
     const slots = findByProps("getMaxEmojiSlots", "getTotalStickerCountForTier");
     const incremental = slots.getIncrementalStickerCountForTier;
+    const bio = findByProps("useBioMaxLength", "getBioMaxLength");
     return [
+        restoreLengthLimits,
+        after("useBioMaxLength", bio, (_: unknown, max: number) => (state.endpoints ? limits.maxBio : max)),
+        after("getBioMaxLength", bio, (_: unknown, max: number) => (state.endpoints ? limits.maxBio : max)),
         onInstanceChange(() => void loadLimits()),
         // the server's own limits instead of the slot counts Discord hardcodes per boost tier
         after("getMaxEmojiSlots", slots, (args: any[], max: number) =>
