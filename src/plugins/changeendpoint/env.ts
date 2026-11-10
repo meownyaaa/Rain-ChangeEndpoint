@@ -1,3 +1,5 @@
+import { ReactNative } from "@metro/common";
+
 import type { Endpoints } from "./config";
 import { state } from "./state";
 
@@ -56,6 +58,12 @@ export const onGatewaySocket = (fn: (ws: WebSocket) => void) => {
     return () => void gatewayWatchers.delete(fn);
 };
 
+function appUserAgent() {
+    const { NativeModules, Platform, PixelRatio } = ReactNative;
+    const version = NativeModules.InfoDictionaryManager?.getConstants?.().Version ?? "0";
+    return `Discord/${version} (iPhone; iOS ${Platform.Version}; Scale/${PixelRatio.get().toFixed(2)})`;
+}
+
 // safety net until the gateway patches are in: never let a custom server's token reach Discord's gateway
 export function guardWebSocket() {
     const Original = globalThis.WebSocket;
@@ -63,9 +71,14 @@ export function guardWebSocket() {
         construct(target, args, newTarget) {
             if (state.endpoints && typeof args[0] === "string" && DISCORD_GATEWAY.test(args[0]))
                 args[0] = args[0].replace(DISCORD_GATEWAY, state.endpoints.gateway.replace(/\/+$/, ""));
-            const ws = Reflect.construct(target, args, newTarget) as WebSocket;
             const gateway = state.endpoints?.gateway.replace(/\/+$/, "");
-            if (gateway && typeof args[0] === "string" && args[0].startsWith(gateway)) gatewayWatchers.forEach(fn => fn(ws));
+            const isGateway = !!gateway && typeof args[0] === "string" && args[0].startsWith(gateway);
+            if (isGateway) {
+                const options = (args[2] ?? {}) as { headers?: Record<string, string> };
+                args[2] = { ...options, headers: { "User-Agent": appUserAgent(), ...options.headers } };
+            }
+            const ws = Reflect.construct(target, args, newTarget) as WebSocket;
+            if (isGateway) gatewayWatchers.forEach(fn => fn(ws));
             return ws;
         },
     });

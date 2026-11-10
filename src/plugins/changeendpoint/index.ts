@@ -29,7 +29,7 @@ export default definePlugin({
     description: "Connect to Spacebar and other Discord-compatible servers",
     author: [{ name: "hazel", id: 0n }],
     id: "changeendpoint",
-    version: "0.10.14",
+    version: "0.10.15",
     requiresRestart: true,
     async eagerStart() {
         // rain holds back Discord's startup until eager plugins finish, so the server is known before any request
